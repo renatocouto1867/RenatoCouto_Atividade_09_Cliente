@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/menu_medias"
+        android:icon="@drawable/checklist_24"
+        android:title="@string/media" />
+</menu>
