@@ -1,36 +1,28 @@
 package com.example.renatocouto_atividade_09_cliente.ui.listar.medias;
 
-import android.content.ContentResolver;
-import android.database.Cursor;
-import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.speech.tts.TextToSpeech;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ProgressBar;
-import android.widget.TextView;
 
 import androidx.fragment.app.Fragment;
+import androidx.lifecycle.ViewModelProvider;
 import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.RecyclerView;
 
-import com.example.renatocouto_atividade_09_cliente.R;
-import com.example.renatocouto_atividade_09_cliente.entity.Aluno;
+import com.example.renatocouto_atividade_09_cliente.databinding.FragmentListarMediasBinding;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Locale;
 
 public class ListarMediasFragment extends Fragment {
-
-    public static final Uri URI_ALUNOS = Uri.parse(
-            "content://com.example.renatocouto_atividade_09_provider/alunos");
+    private FragmentListarMediasBinding binding;
     private ItemListarMediasAdapter itemListarMediasAdapter;
-    private RecyclerView recyclerViewAlunoMedia;
-    private ProgressBar progressBar;
-    private TextView textViewProgress;
+    private TextToSpeech textToSpeech;
+    private ListarMediasViewModel viewModel;
 
     public ListarMediasFragment() {
-
     }
 
     public static ListarMediasFragment newInstance() {
@@ -38,76 +30,70 @@ public class ListarMediasFragment extends Fragment {
     }
 
     @Override
-    public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+                             Bundle savedInstanceState) {
+        binding = FragmentListarMediasBinding.inflate(inflater, container, false);
+        viewModel = new ViewModelProvider(requireActivity()).get(ListarMediasViewModel.class);
 
+        configurarObservers();
+        inicializarTextToSpeech();
+        binding.buttonLer.setOnClickListener(v -> lerResumo());
+
+        return binding.getRoot();
+    }
+
+    private void configurarObservers() {
+        viewModel.getAlunosLiveData().observe(getViewLifecycleOwner(), alunos -> {
+            itemListarMediasAdapter = new ItemListarMediasAdapter(alunos);
+            binding.recyclerViewMedia.setAdapter(itemListarMediasAdapter);
+            binding.recyclerViewMedia.setLayoutManager(new LinearLayoutManager(requireContext()));
+        });
+
+        viewModel.getIsCarregando().observe(getViewLifecycleOwner(), carregando -> {
+            if (carregando) {
+                binding.mediaProgressCircular.setVisibility(View.VISIBLE);
+                binding.tvMediaCarregando.setVisibility(View.VISIBLE);
+            } else {
+                binding.mediaProgressCircular.setVisibility(View.GONE);
+                binding.tvMediaCarregando.setVisibility(View.GONE);
+            }
+        });
+    }
+
+    private void inicializarTextToSpeech() {
+        textToSpeech = new TextToSpeech(requireContext(), status -> {
+            if (status == TextToSpeech.SUCCESS) {
+                Locale locale = new Locale("pt", "BR");
+                int result = textToSpeech.setLanguage(locale);
+                textToSpeech.setSpeechRate(1.2f);
+                if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    Log.e("TextToSpeech", "Idioma não suportado");
+                }
+            } else {
+                Log.e("TextToSpeech", "Falha na inicialização");
+            }
+        });
+    }
+
+    private void lerResumo() {
+        viewModel.getMensagemResumo().observe(getViewLifecycleOwner(), mensagem -> {
+            if (textToSpeech != null && !textToSpeech.isSpeaking()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    textToSpeech.speak(mensagem, TextToSpeech.QUEUE_FLUSH, null, null);
+                } else {
+                    textToSpeech.speak(mensagem, TextToSpeech.QUEUE_FLUSH, null);
+                }
+            }
+        });
     }
 
     @Override
-    public View onCreateView(LayoutInflater inflater, ViewGroup container,
-                             Bundle savedInstanceState) {
-        View view = inflater.inflate(R.layout.fragment_listar_medias, container, false);
-
-        inicializarViews(view);
-        carregarAlunosMedias();
-
-        return view;
-    }
-
-    private void inicializarViews(View view) {
-        progressBar = view.findViewById(R.id.media_progress_circular);
-        recyclerViewAlunoMedia = view.findViewById(R.id.recyclerViewMedia);
-        textViewProgress = view.findViewById(R.id.tv_media_carregando);
-    }
-
-    private void carregarAlunosMedias() {
-        ContentResolver contentResolver = requireContext().getContentResolver();
-        Cursor cursor = contentResolver.query(URI_ALUNOS, null, null, null, null);
-
-        exibirProgresso(true);
-        List<Aluno> alunoList = new ArrayList<>();
-
-        if (cursor != null) {
-            while (cursor.moveToNext()) {
-                Aluno aluno = new Aluno();
-                aluno.setId(cursor.getLong(cursor.getColumnIndexOrThrow("id")));
-                aluno.setNome(cursor.getString(cursor.getColumnIndexOrThrow("nome")));
-                aluno.setNota1(cursor.getDouble(cursor.getColumnIndexOrThrow("nota1")));
-                aluno.setNota2(cursor.getDouble(cursor.getColumnIndexOrThrow("nota2")));
-                aluno.setSituacao(cursor.getString(cursor.getColumnIndexOrThrow("situacao")));
-
-                alunoList.add(aluno);
-            }
-            cursor.close();
+    public void onDestroyView() {
+        super.onDestroyView();
+        if (textToSpeech != null) {
+            textToSpeech.stop();
+            textToSpeech.shutdown();
         }
-
-        configurarRecyclerView(alunoList);
-        atualizarProgresso(alunoList);
+        binding = null;
     }
-
-    private void atualizarProgresso(List<Aluno> alunoList) {
-        if (alunoList != null && !alunoList.isEmpty()) {
-            exibirProgresso(false);
-        } else {
-            progressBar.setVisibility(View.GONE);
-            textViewProgress.setVisibility(View.VISIBLE);
-            textViewProgress.setText(R.string.sem_aluno_cadastrado);
-        }
-    }
-
-    private void exibirProgresso(boolean exibir) {
-        progressBar.setVisibility(exibir ? View.VISIBLE : View.GONE);
-        textViewProgress.setVisibility(exibir ? View.VISIBLE : View.GONE);
-    }
-
-    private void configurarRecyclerView(List<Aluno> alunoList) {
-
-        itemListarMediasAdapter = new ItemListarMediasAdapter(alunoList);
-
-        recyclerViewAlunoMedia.setAdapter(itemListarMediasAdapter);
-        recyclerViewAlunoMedia.setLayoutManager(new LinearLayoutManager(requireContext()));
-
-    }
-
-
 }
